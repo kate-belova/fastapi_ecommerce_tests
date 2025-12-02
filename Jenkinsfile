@@ -7,6 +7,7 @@ pipeline {
 		DB_NAME = ''
 		HOST = ''
 		PORT = ''
+		SECRET_KEY = ''
 	}
 
 	stages {
