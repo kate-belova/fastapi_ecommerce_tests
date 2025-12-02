@@ -12,7 +12,9 @@ on:
         type: choice
         options:
           - all_tests
+          - auth_tests
           - first_tests
+          - negative
           - second_tests
           - positive_tests
           - smoke_tests
@@ -23,6 +25,24 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Create .env file with secrets
+        run: |
+          echo "USER=$USER" > .env
+          echo "PASSWORD=$PASSWORD" >> .env
+          echo "DB_NAME=$DB_NAME" >> .env
+          echo "HOST=$HOST" >> .env
+          echo "PORT=$PORT" >> .env
+          echo "SECRET_KEY=$SECRET_KEY" >> .env
+        env:
+          USER: ${{ secrets.USER }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -42,9 +62,21 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'all_tests'
         run: pytest
 
+      - name: Run authentification tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'auth_tests'
+        run: pytest -m auth
+
       - name: Run health tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'first_tests'
         run: pytest -m first
+
+      - name: Run negative tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'negative_tests'
+        run: pytest -m negative
+
+      - name: Run regression tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'regression_tests'
+        run: pytest -m regression
 
       - name: Run root tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'second_tests'
@@ -58,6 +90,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'smoke_tests'
         run: pytest -m smoke
 
+      - name: Run registration and authentification tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'users_tests'
+        run: pytest -m users
 
       - name: Upload Allure results as artifact
         uses: actions/upload-artifact@v4
