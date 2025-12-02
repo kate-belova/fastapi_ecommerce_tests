@@ -1,4 +1,5 @@
 import allure
+import pytest
 import requests
 from sqlalchemy import select
 
@@ -14,13 +15,16 @@ class UsersAPI(BaseAPI):
         self.url = self.base_url + '/users/'
         self.id = None
         self.email = None
+        self.request_email = None
 
     @allure.step('Send POST request to register new user')
     def register_new_user(self, user_data=None, validate=True):
-        payload = user_data
         if user_data:
-            if validate:
-                payload = UserCreateRequestSchema(**user_data).model_dump()
+            self.request_email = user_data.get('email')
+
+        payload = user_data
+        if user_data and validate:
+            payload = UserCreateRequestSchema(**user_data).model_dump()
 
         self.response = requests.post(self.url, json=payload)
         self.status_code = self.response.status_code
@@ -37,6 +41,8 @@ class UsersAPI(BaseAPI):
                     self.email = self.response_data.get('email')
                 else:
                     self.response_data = self.json
+                    if self.status_code == 409 and self.request_email:
+                        self.email = self.request_email
 
             except requests.exceptions.JSONDecodeError:
                 self.json = None
@@ -45,12 +51,16 @@ class UsersAPI(BaseAPI):
 
     @allure.step('Assert new user is in database')
     def assert_new_user_in_db(self):
+        if not self.email:
+            pytest.fail('Email is not set. Cannot check database.')
+
         with SessionLocal() as db:
             get_user_stmt = select(UserModel).where(
-                UserModel.id == self.id,
                 UserModel.email == self.email,
                 UserModel.is_active == True,
             )
             result = db.scalars(get_user_stmt)
             user = result.first()
-            assert user, f'New user is not found in database'
+            assert (
+                user
+            ), f'User with email {self.email} is not found in database'

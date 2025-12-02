@@ -1,5 +1,10 @@
+import random
+import time
+
 from faker import Faker
 
+random_seed = random.randint(1, 10000) + int(time.time())
+Faker.seed(random_seed)
 random_generator = Faker()
 
 valid_user_data = [
