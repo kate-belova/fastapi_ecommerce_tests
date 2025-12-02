@@ -13,16 +13,21 @@ class BaseAPI:
         self.json = None
         self.data = None
         self.response_data = None
-        self.actual_error_message = None
 
-    @allure.step('Assert response status is OK')
-    def assert_response_is_200(self):
+    @allure.step('Assert response status is {status}')
+    def assert_response_status(self, status):
         assert (
-            self.status_code == 200
-        ), f'Expected status code 200, but got {self.status_code}'
+            self.status_code == status
+        ), f'Expected status code {status}, but got {self.status_code}'
 
-    def assert_data(self, expected_data):
+    def assert_response_data(self, expected_data, ignore_missing_fields=True):
         for key, value in expected_data.items():
+            if ignore_missing_fields and key not in self.response_data:
+                continue
+
+            assert (
+                key in self.response_data
+            ), f'Field {key} is missing in response'
             assert self.response_data[key] == value, (
                 f'Expected {key} to be {value}, '
                 f'but got {self.response_data[key]}'

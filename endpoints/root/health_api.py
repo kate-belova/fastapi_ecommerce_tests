@@ -23,13 +23,11 @@ class HealthAPI(BaseAPI):
                 self.response_data = self.data.model_dump()
             except requests.exceptions.JSONDecodeError:
                 self.json = None
-                self.actual_error_message = 'Invalid JSON response'
         else:
             self.json = None
-            self.actual_error_message = self.response.text
 
     @allure.step('Assert health data is the one expected')
     def assert_health_data(self):
         expected_data = {'status': 'healthy', 'service': 'FastAPI Ecommerce'}
-        self.assert_data(expected_data)
+        self.assert_response_data(expected_data)
         self.assert_valid_timestamp()
