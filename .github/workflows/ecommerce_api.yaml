@@ -39,8 +39,8 @@ jobs:
           SECRET_KEY=${{ secrets.SECRET_KEY }}
           EOF
           
-          echo "=== Environment configuration ==="
-          echo "Target database: ${{ secrets.HOST }}:${{ secrets.PORT }}"
+          echo "Database host: ${{ secrets.HOST }}"
+          echo "Database port: ${{ secrets.PORT }}"
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -53,190 +53,178 @@ jobs:
           pip install -r requirements.txt
           pip install psycopg2-binary
 
-      - name: Diagnose network connectivity
+      - name: Simple network test
         run: |
-          echo "=== Network Diagnostics from GitHub Actions ==="
+          echo "Testing database connectivity..."
           
-          # Устанавливаем инструменты
-          sudo apt-get update
-          sudo apt-get install -y telnet netcat dnsutils curl
-          
-          # Проверяем DNS
-          echo "1. DNS resolution:"
-          nslookup ${{ secrets.HOST }} || dig ${{ secrets.HOST }} +short
-          
-          # Проверяем порт
-          echo ""
-          echo "2. Testing port ${{ secrets.PORT }}:"
-          timeout 10 bash -c "</dev/tcp/${{ secrets.HOST }}/${{ secrets.PORT }}" && \
-            echo "✅ Port ${{ secrets.PORT }} is reachable via /dev/tcp" || \
-            echo "❌ Port ${{ secrets.PORT }} is NOT reachable via /dev/tcp"
-          
-          # Проверяем через Python
-          echo ""
-          echo "3. Testing with Python:"
           python -c "
+          import os
+          from dotenv import load_dotenv
+          load_dotenv()
+          
+          host = os.getenv('HOST')
+          port = os.getenv('PORT')
+          user = os.getenv('USER')
+          dbname = os.getenv('DB_NAME')
+          password = os.getenv('PASSWORD')
+          
+          print(f'Trying to connect to PostgreSQL at {host}:{port}...')
+          
+          # Сначала проверяем базовую TCP доступность
           import socket
-          import sys
-          
-          host = '${{ secrets.HOST }}'
-          port = ${{ secrets.PORT }}
-          
-          print(f'Testing {host}:{port}...')
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          sock.settimeout(10)
           
           try:
-              # Создаем сокет
-              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-              sock.settimeout(10)
-          
-              # Пробуем подключиться
-              result = sock.connect_ex((host, port))
-          
+              result = sock.connect_ex((host, int(port)))
               if result == 0:
-                  print('✅ Connection successful')
-          
-                  # Пробуем получить баннер PostgreSQL
-                  try:
-                      sock.sendall(b'\x00\x00\x00\x08\x04\xD2\x16/')
-                      response = sock.recv(1024)
-                      if response:
-                          if b'PostgreSQL' in response:
-                              print('✅ Server is PostgreSQL')
-                          else:
-                              print(f'Received: {response[:50]}')
-                      else:
-                          print('⚠️ No response from server')
-                  except:
-                      print('⚠️ Could not get server banner')
-          
+                  print('✅ TCP connection to port successful')
               else:
-                  # Коды ошибок
-                  errors = {
-                      111: 'Connection refused',
-                      110: 'Connection timeout',
-                      113: 'No route to host',
-                  }
-                  error_msg = errors.get(result, f'Error code: {result}')
-                  print(f'❌ Connection failed: {error_msg}')
+                  print(f'❌ TCP connection failed with code: {result}')
+                  print('This means:')
+                  if result == 111:
+                      print('  - Server is not listening on port {port}')
+                      print('  - Firewall is blocking the port')
+                      print('  - Service is not running')
+                  elif result == 110:
+                      print('  - Connection timeout')
+                      print('  - Server might be behind firewall that drops packets')
+                  elif result == 113:
+                      print('  - No route to host')
+                      print('  - Host is down or unreachable')
+                  exit(1)
+          except Exception as e:
+              print(f'❌ Socket error: {e}')
+              exit(1)
+          finally:
+              sock.close()
           
-          except socket.timeout:
-              print('❌ Connection timeout')
+          # Теперь пробуем подключиться через psycopg2
+          print('\\nTrying PostgreSQL connection...')
+          try:
+              import psycopg2
+              conn = psycopg2.connect(
+                  host=host,
+                  port=int(port),
+                  database=dbname,
+                  user=user,
+                  password=password,
+                  connect_timeout=15
+              )
+              print('✅ PostgreSQL connection successful!')
+              
+              # Проверяем версию
+              cur = conn.cursor()
+              cur.execute('SELECT version();')
+              version = cur.fetchone()[0]
+              print(f'PostgreSQL version: {version}')
+              
+              # Проверяем существующие таблицы
+              cur.execute(\"\"\"
+                  SELECT table_name 
+                  FROM information_schema.tables 
+                  WHERE table_schema = 'public'
+              \"\"\")
+              tables = [row[0] for row in cur.fetchall()]
+              print(f'Found {len(tables)} tables: {tables}')
+              
+              conn.close()
+              print('✅ All database checks passed')
+              
+          except psycopg2.OperationalError as e:
+              print(f'❌ PostgreSQL connection failed: {e}')
+              print('\\nPossible causes:')
+              print('1. Wrong credentials')
+              print('2. Database does not exist')
+              print('3. User does not have permission')
+              print('4. SSL/TLS issues')
+              exit(1)
           except Exception as e:
               print(f'❌ Unexpected error: {e}')
-          finally:
-              try:
-                  sock.close()
-              except:
-                  pass
+              exit(1)
           "
 
-      - name: Try alternative connection method
-        if: failure()
+      - name: Clean test data
         run: |
-          echo "Trying to connect via SSL..."
+          echo "Cleaning existing test data..."
           python -c "
+          import os
+          from dotenv import load_dotenv
+          load_dotenv()
+          
           import psycopg2
           
           try:
               conn = psycopg2.connect(
-                  host='${{ secrets.HOST }}',
-                  port=${{ secrets.PORT }},
-                  database='${{ secrets.DB_NAME }}',
-                  user='${{ secrets.USER }}',
-                  password='${{ secrets.PASSWORD }}',
-                  connect_timeout=10,
-                  sslmode='require'  # Попробуем с SSL
+                  host=os.getenv('HOST'),
+                  port=int(os.getenv('PORT')),
+                  database=os.getenv('DB_NAME'),
+                  user=os.getenv('USER'),
+                  password=os.getenv('PASSWORD'),
+                  connect_timeout=10
               )
-              print('✅ Connected with SSL')
+              conn.autocommit = True
+              cur = conn.cursor()
+              
+              # Удаляем ВСЕХ тестовых пользователей
+              cur.execute(\"DELETE FROM users WHERE email LIKE '%test%' OR email LIKE '%@example.com' OR email LIKE 'test_%'\")
+              deleted = cur.rowcount
+              print(f'Deleted {deleted} test users')
+              
+              # Также очищаем tokens
+              try:
+                  cur.execute(\"DELETE FROM tokens\")
+                  print(f'Deleted {cur.rowcount} tokens')
+              except:
+                  print('No tokens table or error cleaning tokens')
+              
               conn.close()
           except Exception as e:
-              print(f'❌ SSL connection failed: {e}')
-          
-              # Пробуем без SSL
-              try:
-                  conn = psycopg2.connect(
-                      host='${{ secrets.HOST }}',
-                      port=${{ secrets.PORT }},
-                      database='${{ secrets.DB_NAME }}',
-                      user='${{ secrets.USER }}',
-                      password='${{ secrets.PASSWORD }}',
-                      connect_timeout=10,
-                      sslmode='disable'
-                  )
-                  print('✅ Connected without SSL')
-                  conn.close()
-              except Exception as e2:
-                  print(f'❌ Non-SSL also failed: {e2}')
+              print(f'Cleanup error (continuing anyway): {e}')
           "
 
-      - name: Run tests with retry logic
+      - name: Run tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          # Функция для запуска тестов с повторами
-          run_tests_with_retry() {
-            local target=$1
-            local max_retries=3
-            local retry_count=0
+          echo "Running tests..."
           
-            while [ $retry_count -lt $max_retries ]; do
-              echo "Attempt $((retry_count + 1)) of $max_retries..."
-          
-              if [ "$target" = "all" ]; then
-                python -m pytest -v --tb=short --alluredir=allure-results && return 0
-              else
-                python -m pytest -v --tb=short -m "$target" --alluredir=allure-results && return 0
-              fi
-          
-              retry_count=$((retry_count + 1))
-              if [ $retry_count -lt $max_retries ]; then
-                echo "Test failed, retrying in 5 seconds..."
-                sleep 5
-              fi
-            done
-          
-            echo "All retries failed"
-            return 1
-          }
-          
-          # Определяем какие тесты запускать
-          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "Running all tests..."
-            run_tests_with_retry "all"
-          
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TARGET="${{ github.event.inputs.deployment_target }}"
-          
-            case $TARGET in
-              "all_tests")
-                run_tests_with_retry "all"
+          if [[ \"${{ github.event_name }}\" == \"push\" || \"${{ github.event_name }}\" == \"pull_request\" ]]; then
+            python -m pytest -v --tb=short --alluredir=allure-results
+          else
+            TARGET=\"${{ github.event.inputs.deployment_target }}\"
+            
+            case \$TARGET in
+              \"all_tests\")
+                python -m pytest -v --tb=short --alluredir=allure-results
                 ;;
-              "auth_tests")
-                run_tests_with_retry "auth"
+              \"auth_tests\")
+                python -m pytest -v --tb=short -m auth --alluredir=allure-results
                 ;;
-              "first_tests")
-                run_tests_with_retry "first"
+              \"first_tests\")
+                python -m pytest -v --tb=short -m first --alluredir=allure-results
                 ;;
-              "negative_tests")
-                run_tests_with_retry "negative"
+              \"negative_tests\")
+                python -m pytest -v --tb=short -m negative --alluredir=allure-results
                 ;;
-              "regression_tests")
-                run_tests_with_retry "regression"
+              \"regression_tests\")
+                python -m pytest -v --tb=short -m regression --alluredir=allure-results
                 ;;
-              "positive_tests")
-                run_tests_with_retry "positive"
+              \"positive_tests\")
+                python -m pytest -v --tb=short -m positive --alluredir=allure-results
                 ;;
-              "smoke_tests")
-                run_tests_with_retry "smoke"
+              \"smoke_tests\")
+                python -m pytest -v --tb=short -m smoke --alluredir=allure-results
                 ;;
-              "users_tests")
-                run_tests_with_retry "users"
+              \"users_tests\")
+                python -m pytest -v --tb=short -m users --alluredir=allure-results
                 ;;
             esac
           fi
 
       - name: Upload Allure results
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: allure-results
           path: allure-results
