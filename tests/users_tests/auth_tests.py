@@ -56,7 +56,7 @@ class TestAuth:
     @allure.feature('Registration and authorization')
     @allure.story('Refresh of access token')
     @allure.title('Failed refresh of access token with invalid refresh token')
-    @pytest.mark.positive
+    @pytest.mark.negative
     @pytest.mark.parametrize(
         'refresh_token',
         invalid_refresh_token,
