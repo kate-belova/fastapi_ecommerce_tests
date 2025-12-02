@@ -1,15 +1,6 @@
 pipeline {
 	agent any
 
-	environment {
-		USER = ''
-		PASSWORD = ''
-		DB_NAME = ''
-		HOST = ''
-		PORT = ''
-		SECRET_KEY = ''
-	}
-
 	stages {
 		stage('Checkout') {
 			steps {
