@@ -14,35 +14,33 @@ on:
           - all_tests
           - auth_tests
           - first_tests
-          - negative
-          - second_tests
+          - negative_tests
+          - regression_tests
           - positive_tests
           - smoke_tests
+          - users_tests
 
 jobs:
   run-tests:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Create .env file with secrets
+      - name: Create .env file
         run: |
-          echo "USER=$USER" > .env
-          echo "PASSWORD=$PASSWORD" >> .env
-          echo "DB_NAME=$DB_NAME" >> .env
-          echo "HOST=$HOST" >> .env
-          echo "PORT=$PORT" >> .env
-          echo "SECRET_KEY=$SECRET_KEY" >> .env
-        env:
-          USER: ${{ secrets.USER }}
-          PASSWORD: ${{ secrets.PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          HOST: ${{ secrets.HOST }}
-          PORT: ${{ secrets.PORT }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-
-
+          cat > .env << EOF
+          USER=${{ secrets.USER }}
+          PASSWORD=${{ secrets.PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          HOST=${{ secrets.HOST }}
+          PORT=${{ secrets.PORT }}
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          EOF
+          
+          echo "=== Environment configuration ==="
+          echo "Target database: ${{ secrets.HOST }}:${{ secrets.PORT }}"
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -53,54 +51,196 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install psycopg2-binary
 
-      - name: Run all tests for push/PR
-        if: github.event_name == 'push' || github.event_name == 'pull_request'
-        run: pytest
+      - name: Diagnose network connectivity
+        run: |
+          echo "=== Network Diagnostics from GitHub Actions ==="
+          
+          # Устанавливаем инструменты
+          sudo apt-get update
+          sudo apt-get install -y telnet netcat dnsutils curl
+          
+          # Проверяем DNS
+          echo "1. DNS resolution:"
+          nslookup ${{ secrets.HOST }} || dig ${{ secrets.HOST }} +short
+          
+          # Проверяем порт
+          echo ""
+          echo "2. Testing port ${{ secrets.PORT }}:"
+          timeout 10 bash -c "</dev/tcp/${{ secrets.HOST }}/${{ secrets.PORT }}" && \
+            echo "✅ Port ${{ secrets.PORT }} is reachable via /dev/tcp" || \
+            echo "❌ Port ${{ secrets.PORT }} is NOT reachable via /dev/tcp"
+          
+          # Проверяем через Python
+          echo ""
+          echo "3. Testing with Python:"
+          python -c "
+          import socket
+          import sys
+          
+          host = '${{ secrets.HOST }}'
+          port = ${{ secrets.PORT }}
+          
+          print(f'Testing {host}:{port}...')
+          
+          try:
+              # Создаем сокет
+              sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              sock.settimeout(10)
+          
+              # Пробуем подключиться
+              result = sock.connect_ex((host, port))
+          
+              if result == 0:
+                  print('✅ Connection successful')
+          
+                  # Пробуем получить баннер PostgreSQL
+                  try:
+                      sock.sendall(b'\x00\x00\x00\x08\x04\xD2\x16/')
+                      response = sock.recv(1024)
+                      if response:
+                          if b'PostgreSQL' in response:
+                              print('✅ Server is PostgreSQL')
+                          else:
+                              print(f'Received: {response[:50]}')
+                      else:
+                          print('⚠️ No response from server')
+                  except:
+                      print('⚠️ Could not get server banner')
+          
+              else:
+                  # Коды ошибок
+                  errors = {
+                      111: 'Connection refused',
+                      110: 'Connection timeout',
+                      113: 'No route to host',
+                  }
+                  error_msg = errors.get(result, f'Error code: {result}')
+                  print(f'❌ Connection failed: {error_msg}')
+          
+          except socket.timeout:
+              print('❌ Connection timeout')
+          except Exception as e:
+              print(f'❌ Unexpected error: {e}')
+          finally:
+              try:
+                  sock.close()
+              except:
+                  pass
+          "
 
-      - name: Run all tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'all_tests'
-        run: pytest
+      - name: Try alternative connection method
+        if: failure()
+        run: |
+          echo "Trying to connect via SSL..."
+          python -c "
+          import psycopg2
+          
+          try:
+              conn = psycopg2.connect(
+                  host='${{ secrets.HOST }}',
+                  port=${{ secrets.PORT }},
+                  database='${{ secrets.DB_NAME }}',
+                  user='${{ secrets.USER }}',
+                  password='${{ secrets.PASSWORD }}',
+                  connect_timeout=10,
+                  sslmode='require'  # Попробуем с SSL
+              )
+              print('✅ Connected with SSL')
+              conn.close()
+          except Exception as e:
+              print(f'❌ SSL connection failed: {e}')
+          
+              # Пробуем без SSL
+              try:
+                  conn = psycopg2.connect(
+                      host='${{ secrets.HOST }}',
+                      port=${{ secrets.PORT }},
+                      database='${{ secrets.DB_NAME }}',
+                      user='${{ secrets.USER }}',
+                      password='${{ secrets.PASSWORD }}',
+                      connect_timeout=10,
+                      sslmode='disable'
+                  )
+                  print('✅ Connected without SSL')
+                  conn.close()
+              except Exception as e2:
+                  print(f'❌ Non-SSL also failed: {e2}')
+          "
 
-      - name: Run authentification tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'auth_tests'
-        run: pytest -m auth
+      - name: Run tests with retry logic
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          # Функция для запуска тестов с повторами
+          run_tests_with_retry() {
+            local target=$1
+            local max_retries=3
+            local retry_count=0
+          
+            while [ $retry_count -lt $max_retries ]; do
+              echo "Attempt $((retry_count + 1)) of $max_retries..."
+          
+              if [ "$target" = "all" ]; then
+                python -m pytest -v --tb=short --alluredir=allure-results && return 0
+              else
+                python -m pytest -v --tb=short -m "$target" --alluredir=allure-results && return 0
+              fi
+          
+              retry_count=$((retry_count + 1))
+              if [ $retry_count -lt $max_retries ]; then
+                echo "Test failed, retrying in 5 seconds..."
+                sleep 5
+              fi
+            done
+          
+            echo "All retries failed"
+            return 1
+          }
+          
+          # Определяем какие тесты запускать
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "Running all tests..."
+            run_tests_with_retry "all"
+          
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.deployment_target }}"
+          
+            case $TARGET in
+              "all_tests")
+                run_tests_with_retry "all"
+                ;;
+              "auth_tests")
+                run_tests_with_retry "auth"
+                ;;
+              "first_tests")
+                run_tests_with_retry "first"
+                ;;
+              "negative_tests")
+                run_tests_with_retry "negative"
+                ;;
+              "regression_tests")
+                run_tests_with_retry "regression"
+                ;;
+              "positive_tests")
+                run_tests_with_retry "positive"
+                ;;
+              "smoke_tests")
+                run_tests_with_retry "smoke"
+                ;;
+              "users_tests")
+                run_tests_with_retry "users"
+                ;;
+            esac
+          fi
 
-      - name: Run health tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'first_tests'
-        run: pytest -m first
-
-      - name: Run negative tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'negative_tests'
-        run: pytest -m negative
-
-      - name: Run regression tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'regression_tests'
-        run: pytest -m regression
-
-      - name: Run root tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'second_tests'
-        run: pytest -m second
-
-      - name: Run positive tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'positive_tests'
-        run: pytest -m positive
-
-      - name: Run smoke tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'smoke_tests'
-        run: pytest -m smoke
-
-      - name: Run registration and authentification tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'users_tests'
-        run: pytest -m users
-
-      - name: Upload Allure results as artifact
+      - name: Upload Allure results
         uses: actions/upload-artifact@v4
         with:
           name: allure-results
           path: allure-results
           retention-days: 1
-
 
   publish-report:
     runs-on: ubuntu-latest
