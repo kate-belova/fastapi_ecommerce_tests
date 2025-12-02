@@ -28,19 +28,52 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Debug secrets
+        run: |
+          echo "=== Checking GitHub Secrets ==="
+          echo "HOST exists: ${{ secrets.HOST != '' && 'YES' || 'NO' }}"
+          echo "PORT exists: ${{ secrets.PORT != '' && 'YES' || 'NO' }}"
+          echo "USER exists: ${{ secrets.USER != '' && 'YES' || 'NO' }}"
+          echo "DB_NAME exists: ${{ secrets.DB_NAME != '' && 'YES' || 'NO' }}"
+          echo "SECRET_KEY exists: ${{ secrets.SECRET_KEY != '' && 'YES' || 'NO' }}"
+          
+          # Проверяем длины (скрывая значения)
+          USER_LEN=${#USER_SECRET}
+          PASSWORD_LEN=${#PASSWORD_SECRET}
+          echo "USER length: $USER_LEN"
+          echo "PASSWORD length: $PASSWORD_LEN"
+          
+          if [ $USER_LEN -eq 0 ]; then
+            echo "ERROR: USER secret is empty!"
+            exit 1
+          fi
+        env:
+          USER_SECRET: ${{ secrets.USER }}
+          PASSWORD_SECRET: ${{ secrets.PASSWORD }}
+
       - name: Create .env file
         run: |
-          cat > .env << EOF
-          USER=${{ secrets.USER }}
-          PASSWORD=${{ secrets.PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          HOST=${{ secrets.HOST }}
-          PORT=${{ secrets.PORT }}
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          EOF
+          echo "Creating .env file..."
           
-          echo "Database host: ${{ secrets.HOST }}"
-          echo "Database port: ${{ secrets.PORT }}"
+          # Записываем переменные в .env
+          echo "USER=$DB_USER" > .env
+          echo "PASSWORD=$DB_PASSWORD" >> .env
+          echo "DB_NAME=$DB_NAME" >> .env
+          echo "HOST=$HOST" >> .env
+          echo "PORT=$PORT" >> .env
+          echo "SECRET_KEY=$SECRET_KEY" >> .env
+          
+          # Проверяем что файл создан
+          echo "=== .env file created ==="
+          echo "Lines in .env: $(wc -l < .env)"
+          echo "First few chars of USER: $(head -1 .env | cut -d'=' -f2 | head -c 5)..."
+        env:
+          DB_USER: ${{ secrets.USER }}
+          DB_PASSWORD: ${{ secrets.PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -53,107 +86,86 @@ jobs:
           pip install -r requirements.txt
           pip install psycopg2-binary
 
-      - name: Simple network test
+      - name: Test config loading
         run: |
-          echo "Testing database connectivity..."
+          echo "Testing if config.py loads correctly..."
           
+          # Сначала проверяем .env
+          echo "=== .env file ==="
+          cat .env | while read line; do
+            if [[ $line == *"PASSWORD"* ]] || [[ $line == *"SECRET_KEY"* ]]; then
+              echo "${line%%=*}=[HIDDEN]"
+            else
+              echo "$line"
+            fi
+          done
+          
+          # Теперь проверяем config.py
+          echo ""
+          echo "=== Testing config.py ==="
           python -c "
+          # Временно изменяем config.py для вывода отладочной информации
           import os
-          from dotenv import load_dotenv
-          load_dotenv()
+          print('Current working directory:', os.getcwd())
+          print('Files in current dir:', os.listdir('.'))
+          print('Files in database dir:', os.listdir('database') if os.path.exists('database') else 'No database dir')
           
-          host = os.getenv('HOST')
-          port = os.getenv('PORT')
-          user = os.getenv('USER')
-          dbname = os.getenv('DB_NAME')
-          password = os.getenv('PASSWORD')
-          
-          print(f'Trying to connect to PostgreSQL at {host}:{port}...')
-          
-          # Сначала проверяем базовую TCP доступность
-          import socket
-          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-          sock.settimeout(10)
-          
+          # Импортируем config
           try:
-              result = sock.connect_ex((host, int(port)))
-              if result == 0:
-                  print('✅ TCP connection to port successful')
-              else:
-                  print(f'❌ TCP connection failed with code: {result}')
-                  print('This means:')
-                  if result == 111:
-                      print('  - Server is not listening on port {port}')
-                      print('  - Firewall is blocking the port')
-                      print('  - Service is not running')
-                  elif result == 110:
-                      print('  - Connection timeout')
-                      print('  - Server might be behind firewall that drops packets')
-                  elif result == 113:
-                      print('  - No route to host')
-                      print('  - Host is down or unreachable')
+              from database import config
+              print('✅ Successfully imported config')
+              
+              # Проверяем переменные
+              print('USER from config (via os.getenv):', os.getenv('USER'))
+              print('HOST from config (via os.getenv):', os.getenv('HOST'))
+              print('DATABASE_URL first 50 chars:', config.DATABASE_URL[:50] + '...')
+              
+              # Проверяем что USER не 'runner'
+              user = os.getenv('USER')
+              if user == 'runner':
+                  print('❌ ERROR: USER is "runner" (default value)')
+                  print('This means the environment variable is not set!')
                   exit(1)
+              elif user == 'ecommerce_user':
+                  print('✅ USER is correct: ecommerce_user')
+              else:
+                  print(f'⚠️ USER is: {user}')
+                  
           except Exception as e:
-              print(f'❌ Socket error: {e}')
-              exit(1)
-          finally:
-              sock.close()
-          
-          # Теперь пробуем подключиться через psycopg2
-          print('\\nTrying PostgreSQL connection...')
-          try:
-              import psycopg2
-              conn = psycopg2.connect(
-                  host=host,
-                  port=int(port),
-                  database=dbname,
-                  user=user,
-                  password=password,
-                  connect_timeout=15
-              )
-              print('✅ PostgreSQL connection successful!')
-              
-              # Проверяем версию
-              cur = conn.cursor()
-              cur.execute('SELECT version();')
-              version = cur.fetchone()[0]
-              print(f'PostgreSQL version: {version}')
-              
-              # Проверяем существующие таблицы
-              cur.execute(\"\"\"
-                  SELECT table_name 
-                  FROM information_schema.tables 
-                  WHERE table_schema = 'public'
-              \"\"\")
-              tables = [row[0] for row in cur.fetchall()]
-              print(f'Found {len(tables)} tables: {tables}')
-              
-              conn.close()
-              print('✅ All database checks passed')
-              
-          except psycopg2.OperationalError as e:
-              print(f'❌ PostgreSQL connection failed: {e}')
-              print('\\nPossible causes:')
-              print('1. Wrong credentials')
-              print('2. Database does not exist')
-              print('3. User does not have permission')
-              print('4. SSL/TLS issues')
-              exit(1)
-          except Exception as e:
-              print(f'❌ Unexpected error: {e}')
-              exit(1)
+              print(f'❌ Failed to import config: {e}')
+              import traceback
+              traceback.print_exc()
           "
 
-      - name: Clean test data
+      - name: Test database connection
+        env:
+          # Передаем переменные напрямую для этого шага
+          USER: ${{ secrets.USER }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
         run: |
-          echo "Cleaning existing test data..."
+          echo "=== Direct database connection test ==="
+          
           python -c "
           import os
-          from dotenv import load_dotenv
-          load_dotenv()
+          
+          print('Environment variables for this step:')
+          print('USER:', os.getenv('USER'))
+          print('HOST:', os.getenv('HOST'))
+          print('PORT:', os.getenv('PORT'))
+          print('DB_NAME:', os.getenv('DB_NAME'))
+          print('PASSWORD length:', len(os.getenv('PASSWORD', '')))
+          
+          # Проверяем что это наш пользователь
+          user = os.getenv('USER')
+          if user != 'ecommerce_user':
+              print(f'❌ ERROR: Expected USER=ecommerce_user, but got: {user}')
+              print('This means GitHub Secrets are not being passed correctly!')
+              exit(1)
           
           import psycopg2
-          
           try:
               conn = psycopg2.connect(
                   host=os.getenv('HOST'),
@@ -163,62 +175,49 @@ jobs:
                   password=os.getenv('PASSWORD'),
                   connect_timeout=10
               )
-              conn.autocommit = True
+              print('✅ PostgreSQL connection successful!')
+              print(f'Connected as user: {os.getenv(\"USER\")}')
+              
               cur = conn.cursor()
-              
-              # Удаляем ВСЕХ тестовых пользователей
-              cur.execute(\"DELETE FROM users WHERE email LIKE '%test%' OR email LIKE '%@example.com' OR email LIKE 'test_%'\")
-              deleted = cur.rowcount
-              print(f'Deleted {deleted} test users')
-              
-              # Также очищаем tokens
-              try:
-                  cur.execute(\"DELETE FROM tokens\")
-                  print(f'Deleted {cur.rowcount} tokens')
-              except:
-                  print('No tokens table or error cleaning tokens')
+              cur.execute('SELECT current_user;')
+              current_user = cur.fetchone()[0]
+              print(f'Current database user: {current_user}')
               
               conn.close()
-          except Exception as e:
-              print(f'Cleanup error (continuing anyway): {e}')
+          except psycopg2.OperationalError as e:
+              print(f'❌ Connection failed: {e}')
+              exit(1)
           "
 
       - name: Run tests
         env:
           PYTHONPATH: ${{ github.workspace }}
+          # Передаем переменные напрямую для тестов
+          USER: ${{ secrets.USER }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
-          echo "Running tests..."
+          echo "=== Environment for tests ==="
+          echo "USER: $USER"
+          echo "HOST: $HOST"
+          echo "PORT: $PORT"
           
           if [[ \"${{ github.event_name }}\" == \"push\" || \"${{ github.event_name }}\" == \"pull_request\" ]]; then
             python -m pytest -v --tb=short --alluredir=allure-results
           else
             TARGET=\"${{ github.event.inputs.deployment_target }}\"
-            
             case \$TARGET in
-              \"all_tests\")
-                python -m pytest -v --tb=short --alluredir=allure-results
-                ;;
-              \"auth_tests\")
-                python -m pytest -v --tb=short -m auth --alluredir=allure-results
-                ;;
-              \"first_tests\")
-                python -m pytest -v --tb=short -m first --alluredir=allure-results
-                ;;
-              \"negative_tests\")
-                python -m pytest -v --tb=short -m negative --alluredir=allure-results
-                ;;
-              \"regression_tests\")
-                python -m pytest -v --tb=short -m regression --alluredir=allure-results
-                ;;
-              \"positive_tests\")
-                python -m pytest -v --tb=short -m positive --alluredir=allure-results
-                ;;
-              \"smoke_tests\")
-                python -m pytest -v --tb=short -m smoke --alluredir=allure-results
-                ;;
-              \"users_tests\")
-                python -m pytest -v --tb=short -m users --alluredir=allure-results
-                ;;
+              \"all_tests\") python -m pytest -v --tb=short --alluredir=allure-results ;;
+              \"auth_tests\") python -m pytest -v --tb=short -m auth --alluredir=allure-results ;;
+              \"first_tests\") python -m pytest -v --tb=short -m first --alluredir=allure-results ;;
+              \"negative_tests\") python -m pytest -v --tb=short -m negative --alluredir=allure-results ;;
+              \"regression_tests\") python -m pytest -v --tb=short -m regression --alluredir=allure-results ;;
+              \"positive_tests\") python -m pytest -v --tb=short -m positive --alluredir=allure-results ;;
+              \"smoke_tests\") python -m pytest -v --tb=short -m smoke --alluredir=allure-results ;;
+              \"users_tests\") python -m pytest -v --tb=short -m users --alluredir=allure-results ;;
             esac
           fi
 
@@ -229,42 +228,3 @@ jobs:
           name: allure-results
           path: allure-results
           retention-days: 1
-
-  publish-report:
-    runs-on: ubuntu-latest
-    needs: run-tests
-    if: always()
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Download Allure results artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-results
-          path: allure-results
-
-      - name: Get Allure history
-        uses: actions/checkout@v5
-        if: always()
-        continue-on-error: true
-        with:
-          ref: gh-pages
-          path: gh-pages
-
-      - name: Generate Allure Report
-        uses: simple-elf/allure-report-action@master
-        if: always()
-        with:
-          allure_results: allure-results
-          gh_pages: gh-pages
-          keep_reports: 20
-
-      - name: Deploy report to Github Pages
-        uses: peaceiris/actions-gh-pages@v4
-        if: always()
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: allure-history
