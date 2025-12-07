@@ -1,0 +1,30 @@
+INFO     sqlalchemy.engine.Engine:base.py:2702 BEGIN (implicit)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT users.id, users.email, users.hashed_password, users.is_active, users.role 
+FROM users 
+WHERE users.email = %(email_1)s AND users.is_active = true
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 9.022s ago] {'email_1': 'ubuchanan@example.org'}
+INFO     sqlalchemy.engine.Engine:base.py:2705 ROLLBACK
+INFO     sqlalchemy.engine.Engine:base.py:2702 BEGIN (implicit)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT users.id, users.email, users.hashed_password, users.is_active, users.role 
+FROM users 
+WHERE users.email = %(email_1)s AND users.is_active = true
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 9.488s ago] {'email_1': 'ubuchanan@example.org'}
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT reviews.id AS reviews_id, reviews.user_id AS reviews_user_id, reviews.product_id AS reviews_product_id, reviews.comment AS reviews_comment, reviews.comment_date AS reviews_comment_date, reviews.grade AS reviews_grade, reviews.is_active AS reviews_is_active 
+FROM reviews 
+WHERE %(param_1)s = reviews.user_id
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 7.315s ago] {'param_1': 518}
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT cart_items.id AS cart_items_id, cart_items.user_id AS cart_items_user_id, cart_items.product_id AS cart_items_product_id, cart_items.quantity AS cart_items_quantity, cart_items.created_at AS cart_items_created_at, cart_items.updated_at AS cart_items_updated_at 
+FROM cart_items 
+WHERE %(param_1)s = cart_items.user_id
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 7.313s ago] {'param_1': 518}
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT orders.id AS orders_id, orders.user_id AS orders_user_id, orders.status AS orders_status, orders.total_amount AS orders_total_amount, orders.created_at AS orders_created_at, orders.updated_at AS orders_updated_at 
+FROM orders 
+WHERE %(param_1)s = orders.user_id
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 7.311s ago] {'param_1': 518}
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT products.id AS products_id, products.name AS products_name, products.description AS products_description, products.price AS products_price, products.image_url AS products_image_url, products.stock AS products_stock, products.is_active AS products_is_active, products.category_id AS products_category_id, products.seller_id AS products_seller_id, products.rating AS products_rating, products.tsv AS products_tsv 
+FROM products 
+WHERE %(param_1)s = products.seller_id
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 7.308s ago] {'param_1': 518}
+INFO     sqlalchemy.engine.Engine:base.py:1846 DELETE FROM users WHERE users.id = %(id)s
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 7.306s ago] {'id': 518}
+INFO     sqlalchemy.engine.Engine:base.py:2708 COMMIT
