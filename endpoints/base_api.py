@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import allure
+import pytest
 import requests
 
 
@@ -13,6 +14,7 @@ class BaseAPI:
         self.json = None
         self.data = None
         self.response_data = None
+        self.expected_response_data = None
 
     @allure.step('Assert response status is {status}')
     def assert_response_status(self, status):
@@ -68,3 +70,12 @@ class BaseAPI:
                 f'Invalid timestamp format: {timestamp}. '
                 f'Error: {invalid_format_error}'
             )
+
+    @allure.step('Assert error')
+    def assert_error(self):
+        if self.expected_response_data:
+            self.assert_response_data(
+                self.expected_response_data, ignore_missing_fields=False
+            )
+        else:
+            pytest.fail('No expected error data available')

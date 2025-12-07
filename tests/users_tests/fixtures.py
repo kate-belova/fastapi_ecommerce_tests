@@ -4,10 +4,9 @@ from starlette import status
 from starlette.exceptions import HTTPException
 
 from database.connection import SessionLocal
-from endpoints import UsersAPI
-from endpoints.users.auth_api import AuthAPI
+from endpoints import UsersAPI, AuthAPI
 from models import UserModel
-from tests.users_tests.test_data import valid_user_data
+from tests.users_tests.users_test_data import valid_user_data
 
 
 def delete_user_by_email(user_email: str):
@@ -63,7 +62,7 @@ def users_api(request):
 
 
 @pytest.fixture
-def registered_user(users_api):
+def registered_buyer(users_api):
     user_data = valid_user_data[0]
     users_api.register_new_user(user_data)
 
@@ -80,8 +79,36 @@ def registered_user(users_api):
 
 
 @pytest.fixture
-def authenticated_user(registered_user, auth_api):
-    auth_data = registered_user
+def registered_seller(users_api):
+    user_data = valid_user_data[1]
+    users_api.register_new_user(user_data)
+
+    if users_api.status_code != 409:
+        users_api.assert_response_status(201)
+        users_api.assert_response_data(user_data)
+
+    users_api.assert_new_user_in_db()
+
+    return {
+        'username': users_api.email,
+        'password': user_data['password'],
+    }
+
+
+@pytest.fixture
+def authenticated_buyer(registered_buyer, auth_api):
+    auth_data = registered_buyer
+    auth_api.get_token('access_token', auth_data)
+
+    auth_api.assert_response_status(200)
+    auth_api.assert_tokens()
+
+    return auth_api
+
+
+@pytest.fixture
+def authenticated_seller(registered_seller, auth_api):
+    auth_data = registered_seller
     auth_api.get_token('access_token', auth_data)
 
     auth_api.assert_response_status(200)

@@ -1,7 +1,6 @@
 import pytest
 
-from endpoints import HealthAPI
-from endpoints import RootAPI
+from endpoints import HealthAPI, RootAPI
 
 
 @pytest.fixture

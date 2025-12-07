@@ -20,7 +20,6 @@ class AuthAPI(UsersAPI):
         self.access_token = None
         self.refresh_token = None
         self.token_type = 'bearer'
-        self.expected_response_data = None
 
     @allure.step('Send POST request to get {token}')
     def get_token(self, token, auth_data=None, validate=True):
@@ -90,12 +89,3 @@ class AuthAPI(UsersAPI):
         assert len(self.refresh_token) > 0, 'Refresh token is empty'
 
         assert self.token_type == 'bearer', 'Token type should be bearer'
-
-    @allure.step('Assert error')
-    def assert_error(self):
-        if self.expected_response_data:
-            self.assert_response_data(
-                self.expected_response_data, ignore_missing_fields=False
-            )
-        else:
-            pytest.fail('No expected error data available')

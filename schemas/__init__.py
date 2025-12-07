@@ -4,6 +4,7 @@ __all__ = [
     'UserCreateRequestSchema', 'UserResponseSchema',
     'AuthRequestSchema', 'AuthResponseSchema',
     'RefreshTokenResponseSchema',
+    'CategoryCreateRequestSchema', 'CategoryResponseSchema'
 ]
 # fmt: on
 
@@ -14,4 +15,8 @@ from schemas.users_schemas import (
     AuthRequestSchema,
     AuthResponseSchema,
     RefreshTokenResponseSchema,
+)
+from schemas.categories_schemas import (
+    CategoryCreateRequestSchema,
+    CategoryResponseSchema,
 )

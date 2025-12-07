@@ -1,7 +1,10 @@
 import allure
 import pytest
 
-from tests.users_tests.test_data import valid_user_data, invalid_user_data
+from tests.users_tests.users_test_data import (
+    valid_user_data,
+    invalid_user_data,
+)
 
 
 @pytest.mark.users

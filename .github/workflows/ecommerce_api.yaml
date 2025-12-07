@@ -13,11 +13,19 @@ on:
         options:
           - all_tests
           - auth_tests
+          - categories_tests
+          - create_tests
+          - crud_tests
+          - delete_tests
           - first_tests
+          - get_tests
           - negative_tests
-          - second_tests
           - positive_tests
+          - regression_tests
+          - second_tests
           - smoke_tests
+          - update_tests
+          - users_tests
 
 jobs:
   run-tests:
@@ -66,13 +74,37 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'auth_tests'
         run: pytest -m auth
 
+      - name: Run categories tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'categories_tests'
+        run: pytest -m categories
+
+      - name: Run POST tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'create_tests'
+        run: pytest -m create
+
+      - name: Run POST, GET, PUT, DELETE tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'crud_tests'
+        run: pytest -m crud
+
+      - name: Run DELETE tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'delete_tests'
+        run: pytest -m delete
+
       - name: Run health tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'first_tests'
         run: pytest -m first
 
+      - name: Run GET tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'get_tests'
+        run: pytest -m get
+
       - name: Run negative tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'negative_tests'
         run: pytest -m negative
+
+      - name: Run positive tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'positive_tests'
+        run: pytest -m positive
 
       - name: Run regression tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'regression_tests'
@@ -82,13 +114,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'second_tests'
         run: pytest -m second
 
-      - name: Run positive tests
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'positive_tests'
-        run: pytest -m positive
-
       - name: Run smoke tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'smoke_tests'
         run: pytest -m smoke
+
+      - name: Run PUT tests
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'update_tests'
+        run: pytest -m update
 
       - name: Run registration and authentication tests
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.deployment_target == 'users_tests'

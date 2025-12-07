@@ -1,7 +1,7 @@
 import allure
 import pytest
 
-from tests.users_tests.test_data import (
+from tests.users_tests.users_test_data import (
     invalid_auth_data,
     invalid_refresh_token,
 )
@@ -16,8 +16,8 @@ class TestAuth:
     @allure.title('Successful authorization')
     @pytest.mark.positive
     @pytest.mark.smoke
-    def test_registered_user_successful_auth(self, registered_user, auth_api):
-        auth_data = registered_user
+    def test_registered_user_successful_auth(self, registered_buyer, auth_api):
+        auth_data = registered_buyer
         auth_api.get_token('access_token', auth_data)
         auth_api.assert_response_status(200)
         auth_api.assert_tokens()
@@ -48,10 +48,10 @@ class TestAuth:
     @allure.story('Automatical refresh of access token')
     @allure.title('Successful refresh of access token')
     @pytest.mark.positive
-    def test_update_access_token_success(self, authenticated_user):
-        authenticated_user.get_token('refresh_token')
-        authenticated_user.assert_response_status(200)
-        authenticated_user.assert_tokens()
+    def test_update_access_token_success(self, authenticated_buyer):
+        authenticated_buyer.get_token('refresh_token')
+        authenticated_buyer.assert_response_status(200)
+        authenticated_buyer.assert_tokens()
 
     @allure.feature('Registration and authorization')
     @allure.story('Refresh of access token')
@@ -66,9 +66,9 @@ class TestAuth:
         ],
     )
     def test_update_access_token_with_invalid_refresh_token(
-        self, authenticated_user, refresh_token
+        self, authenticated_buyer, refresh_token
     ):
-        authenticated_user.refresh_token = refresh_token
-        authenticated_user.get_token('refresh_token')
-        authenticated_user.assert_response_status(401)
-        authenticated_user.assert_error()
+        authenticated_buyer.refresh_token = refresh_token
+        authenticated_buyer.get_token('refresh_token')
+        authenticated_buyer.assert_response_status(401)
+        authenticated_buyer.assert_error()

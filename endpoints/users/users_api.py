@@ -15,13 +15,9 @@ class UsersAPI(BaseAPI):
         self.url = self.base_url + '/users/'
         self.id = None
         self.email = None
-        self.request_email = None
 
     @allure.step('Send POST request to register new user')
     def register_new_user(self, user_data=None, validate=True):
-        if user_data:
-            self.request_email = user_data.get('email')
-
         payload = user_data
         if user_data and validate:
             payload = UserCreateRequestSchema(**user_data).model_dump()
@@ -41,8 +37,6 @@ class UsersAPI(BaseAPI):
                     self.email = self.response_data.get('email')
                 else:
                     self.response_data = self.json
-                    if self.status_code == 409 and self.request_email:
-                        self.email = self.request_email
 
             except requests.exceptions.JSONDecodeError:
                 self.json = None
