@@ -1,0 +1,6 @@
+INFO     sqlalchemy.engine.Engine:base.py:2702 BEGIN (implicit)
+INFO     sqlalchemy.engine.Engine:base.py:1846 SELECT users.id, users.email, users.hashed_password, users.is_active, users.role 
+FROM users 
+WHERE users.email = %(email_1)s AND users.is_active = true
+INFO     sqlalchemy.engine.Engine:base.py:1846 [cached since 10.95s ago] {'email_1': 'invalid-email@yandex.'}
+INFO     sqlalchemy.engine.Engine:base.py:2705 ROLLBACK
